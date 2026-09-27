@@ -269,6 +269,7 @@ function alertMsg(msg){ if(tg && tg.showAlert) tg.showAlert(msg); else alert(msg
 
 /* ---------- AI BACKEND (ключ никогда не хранится тут!) ---------- */
 const AI_ENDPOINT = 'https://your-backend.onrender.com/api/ai-insights'; // заглушка, замени на свой backend
+const PAYMENT_ENDPOINT = 'https://exkqgikriyprigggudaj.supabase.co/functions/v1/telegram-payments/create-invoice';
 
 /* ---------- DATA ---------- */
 const EXERCISES = {
@@ -758,7 +759,46 @@ function renderStats(){
       alertMsg(unlocked ? `${a.emoji} ${a.name}\n${a.desc}\nПолучено: ${new Date(unlocked.unlockedAt).toLocaleDateString('ru-RU')}` : `${a.emoji} ${a.name}\n${a.desc}\nЕщё не разблокировано`);
     });
   });
-  document.getElementById('premiumCard').addEventListener('click', ()=>{ haptic('light'); openPremium(); });
+  document.getElementById('buyPremium').addEventListener('click', async () => {
+  haptic('medium');
+  if (!tg || !tg.openInvoice) { alertMsg('Открой приложение в Telegram'); return; }
+  if (tg.isVersionAtLeast && !tg.isVersionAtLeast('6.1')) { alertMsg('Обнови Telegram до последней версии'); return; }
+
+  const btn = document.getElementById('buyPremium');
+  btn.disabled = true; btn.textContent = 'Создаём счёт…';
+  try {
+    const res = await fetch(PAYMENT_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        userId: tg.initDataUnsafe?.user?.id,
+        amount: 100,
+        title: 'GymFlow Premium',
+        description: 'Подписка на 1 месяц',
+      }),
+    });
+    const data = await res.json();
+    if (!data.invoiceLink) throw new Error(data.error || 'Не удалось создать счёт');
+
+    tg.openInvoice(data.invoiceLink, (status) => {
+      if (status === 'paid') {
+        state.user.isPremium = true; saveState();
+        haptic('medium');
+        popup('Премиум активирован! 🎉', 'Спасибо за поддержку!');
+        document.getElementById('premiumScreen').classList.remove('show');
+        renderStats();
+      } else if (status === 'cancelled') {
+        alertMsg('Оплата отменена');
+      } else {
+        alertMsg('Оплата не завершена');
+      }
+    });
+  } catch (err) {
+    alertMsg('Ошибка: ' + err.message);
+  } finally {
+    btn.disabled = false; btn.textContent = 'Оформить за 100 ⭐';
+  }
+});
 }
 
 /* ---------- PREMIUM ---------- */
